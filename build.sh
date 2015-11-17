@@ -32,9 +32,9 @@ echo "[Script by Linus Yang]"
 echo ""
 
 # sdk variable
-export IOS_VERSION="5.1"
+export IOS_VERSION="9.1"
 export DEVROOT=$("xcode-select" -print-path)"/Platforms/iPhoneOS.platform/Developer"
-export SDKROOT="$DEVROOT/SDKs/iPhoneOS${IOS_VERSION}.sdk"
+export SDKROOT="$DEVROOT/SDKs/iPhoneOS.sdk"
 
 # other variable
 export NOWDIR="$(cd "$(dirname "$0")" && pwd)"
@@ -45,8 +45,8 @@ export PRELIBLOC="$PRELIBFIX/prelib"
 export LDIDLOC="$PRELIBLOC/usr/bin/ldid"
 export DPKGLOC="$PRELIBLOC/usr/bin/dpkg-deb"
 export FAKELOC="$PRELIBLOC/usr/bin/fakeroot"
-export NATICC="/usr/bin/arm-apple-darwin9-gcc"
-export NATICXX="/usr/bin/arm-apple-darwin9-g++"
+export NATICC="gcc"
+export NATICXX="gcc++"
 
 # check dependency
 cd "$NOWDIR"
@@ -69,7 +69,7 @@ fi
 # download python
 echo '[Fetching Python source code]'
 if [[ ! -a Python-${PYVER}.tar.xz ]]; then
-    curl -O http://www.python.org/ftp/python/${PYVER}/Python-${PYVER}.tar.xz
+    curl -O https://www.python.org/ftp/python/${PYVER}/Python-${PYVER}.tar.xz
 fi
 
 # extract dependency library
@@ -80,30 +80,33 @@ tar zxf "${PRELIB}" -C "${PRELIBFIX}"
 # get rid of old build
 rm -rf Python-${PYVER}
 tar Jxf Python-${PYVER}.tar.xz
-pushd ./Python-${PYVER} > /dev/null 2>&1
+pushd ./Python-${PYVER} 
 
 # build for native machine
 echo '[Building for host system]'
 SAVESDK="$SDKROOT"
 export SDKROOT=""
-./configure > /dev/null 2>&1
-make > /dev/null 2>&1
+./configure
+make
 mv python.exe python.exe_for_build
 mv Parser/pgen Parser/pgen_for_build
 mv build "$PRELIBLOC/build_host"
 mv pybuilddir.txt pybuilddir_host.txt
 sed -i '' 's:build/:build_host/:g' pybuilddir_host.txt
-make distclean > /dev/null 2>&1
+make distclean
 export SDKROOT="$SAVESDK"
 
 # patch python to cross-compile
 patch -p1 < ../patches/Python-xcompile-${PYVER}.patch
 
+# add second patch for crt_extern.h / _NSGetEnviron()
+patch -p1 < ../patches/Python-xcompile-${PYVER}_2.patch
+
 # set up environment variables for cross compilation
-export CPPFLAGS="-I$SDKROOT/usr/include/ -I$PRELIBLOC/usr/include"
+export CPPFLAGS="-I$SDKROOT/usr/include/ -I$PRELIBLOC/usr/include -arch arm64 -miphoneos-version-min=9.0"
 export CFLAGS="$CPPFLAGS -pipe -isysroot $SDKROOT"
 export CXXFLAGS="$CFLAGS"
-export LDFLAGS="-isysroot $SDKROOT -miphoneos-version-min=3.0 -L$SDKROOT/usr/lib/ -L$PRELIBLOC/usr/lib"
+export LDFLAGS="-isysroot $SDKROOT -miphoneos-version-min=9.0 -L$SDKROOT/usr/lib/ -L$PRELIBLOC/usr/lib -arch arm64"
 export CC="$NATICC"
 export CXX="$NATICXX"
 export LD="$DEVROOT/usr/bin/ld"
@@ -111,10 +114,10 @@ export OPT="-DNDEBUG -O3 -Wall -Wstrict-prototypes"
 
 # build for iphone
 echo '[Cross compiling for Darwin ARM]'
-./configure --prefix=/usr --enable-ipv6 --host=arm-apple-darwin --build=x86_64-apple-darwin --enable-shared --disable-toolbox-glue --with-signal-module --with-system-ffi --without-pymalloc ac_cv_file__dev_ptmx=yes ac_cv_file__dev_ptc=no ac_cv_have_long_long_format=yes > /dev/null 2>&1
+./configure --prefix=/usr --enable-ipv6 --host=aarch64-apple-darwin13 --build=x86_64-apple-darwin --enable-shared --disable-toolbox-glue --with-signal-module --with-system-ffi --without-pymalloc ac_cv_file__dev_ptmx=yes ac_cv_file__dev_ptc=no ac_cv_have_long_long_format=yes
 make
 mv "$PRELIBLOC/build_host" .
-make install prefix="$PWD/_install/usr" > /dev/null 2>&1
+make install prefix="$PWD/_install/usr"
 rm -rf "$PWD/_install/usr/share"
 
 # sign binary with ldid
